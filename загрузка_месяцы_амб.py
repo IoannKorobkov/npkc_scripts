@@ -54,13 +54,13 @@ NTFY_DASHBOARD_TOPIC = "push_mrc_dashboards_7895"  # Топик для фина�
 sys.path.append(r'L:\bot') # Путь к папке с status_tracker.py
 # Проверим, существует ли модуль, прежде чем импортировать
 try:
-    from status_tracker import record_script_completion, record_script_error
+    # from status_tracker import record_script_completion, record_script_error
     STATUS_TRACKER_AVAILABLE = True
 except ImportError:
     print("⚠️ Модуль status_tracker не найден. Запись статуса отключена.")
     STATUS_TRACKER_AVAILABLE = False
-    def record_script_completion(*args, **kwargs): pass
-    def record_script_error(*args, **kwargs): pass
+    # def record_script_completion(*args, **kwargs): pass
+    # def record_script_error(*args, **kwargs): pass
 
 # === Функция: Отправка сообщения в ntfy для логов ===
 def send_log_ntfy_message(message: str):
@@ -426,12 +426,12 @@ SELECT
     vie.ae_title,
     -- Коррекция device_type для конкретных ae_title
     multiIf(
-        vie.ae_title IN ('ING_GP45', 'AWP190202', 'AWP190378', 'AWP190384', 'AWP190464', 'AWP190802', 'AWP190826', 'EXCELMRI_GP219'), 'МРТ',
-        vie.ae_title IN ('3994BY5T', 'A5EKD37M', 'AMULET_KUZ', 'DMX_TGBF2', 'MAMMO51_GP66', 'MAMMO51_GP68', 'MAMMO5_GP175', 'MAMMO5_GP2', 'MAMMO5_GP219F4', 'MAMMO5_GP23', 'MAMMO5_GP45', 'MAMMO5_GP68', 'R4A2E7R4', 'SENO1_GP195F3', 'SENO1_GP36F3', 'SENO_DKC1', 'SENO_GP107', 'SENO_GP109', 'SENO_GP109F1', 'SENO_GP109F4', 'SENO_GP115F1', 'SENO_GP12', 'SENO_GP12F5', 'SENO_GP134F2', 'SENO_GP166', 'SENO_GP170F1', 'SENO_GP170F4', 'SENO_GP175F3', 'SENO_GP180', 'SENO_GP180F3', 'SENO_GP191', 'SENO_GP191F2', 'SENO_GP195', 'SENO_GP195F1', 'SENO_GP19F3', 'SENO_GP212F197', 'SENO_GP212F217', 'SENO_GP214F1', 'SENO_GP214F2', 'SENO_GP219F1', 'SENO_GP22F2', 'SENO_GP2F3', 'SENO_GP2F5', 'SENO_GP36F3', 'SENO_GP3F1', 'SENO_GP45F2', 'SENO_GP46F1', 'SENO_GP52F2', 'SENO_GP52F3', 'SENO_GP62F3', 'SENO_GP62F5', 'SENO_GP64F2', 'SENO_GP66F4', 'SENO_GP69', 'SENO_GP6F4', 'SENO_GP8', 'SENO_GP8F2', 'SENO_K2042', 'SENO_KDC4F2', 'SENO_KDC4F4', 'SENO_KDC6', 'SENO_KDC6F4', 'SENO_KDP121F5', 'SENO_MOS'), 'ММГ',
-        vie.ae_title IN ('AQSP_GP68', 'CT172868', 'REVOL_GP210', 'REVOL_GP214', 'RVMAX-GP23'), 'КТ',
+        vie.ae_title IN ('ING_GP45', 'AWP190202', 'AWP190378', 'AWP190384', 'AWP190464', 'AWP190703', 'AWP190802', 'AWP190826', 'EXCELMRI_GP219'), 'МРТ',
+        vie.ae_title IN ('3994BY5T', 'A5EKD37M', 'AMULET_KUZ', 'DMX_TGBF2', 'MAMMO51_GP66', 'MAMMO51_GP68', 'MAMMO5_GP175', 'MAMMO5_GP2', 'MAMMO5_GP219F4', 'MAMMO5_GP23', 'MAMMO5_GP45', 'MAMMO5_GP68', 'R4A2E7R4', 'SENO1_GP195F3', 'SENO1_GP36F3', 'SENO_DKC1', 'SENO_GP107', 'SENO_GP109', 'SENO_GP109F1', 'SENO_GP109F4', 'SENO_GP115F1', 'SENO_GP12', 'SENO_GP12F5', 'SENO_GP134F2', 'SENO_GP166', 'SENO_GP170F1', 'SENO_GP170F4', 'SENO_GP175F3', 'SENO_GP180', 'SENO_GP180F3', 'SENO_GP191', 'SENO_GP191F2', 'SENO_GP195', 'SENO_GP195F1', 'SENO_GP19F3', 'SENO_GP212F197', 'SENO_GP212F217', 'SENO_GP214F1', 'SENO_GP214F2', 'SENO_GP219F1', 'SENO_GP22F2', 'SENO_GP2F3', 'SENO_GP2F5', 'SENO_GP36F3', 'SENO_GP3F1', 'SENO_GP45F2', 'SENO_GP46F1', 'SENO_GP52F2', 'SENO_GP52F3', 'SENO_GP62F3', 'SENO_GP62F5', 'SENO_GP64F2', 'SENO_GP66F4', 'SENO_GP69', 'SENO_GP6F4', 'SENO_GP8', 'SENO_GP8F2', 'SENO_K2042', 'SENO_KDC4F2', 'SENO_KDC4F4', 'SENO_KDC6', 'SENO_KDC6F4', 'SENO_KDP121F5', 'SENO_MOS', 'AMULET_ERAMCZ', 'AMULET_GKB15CZ', 'AMULET_YUDCZ1', 'AMULET_YUDCZ2', 'SENO_ERAMCZ2', 'SENO_GB3', 'SENO_GKB15CP', 'SENO_K1460', 'SENO_K225', 'SENO_K911', 'SENO_YUDCZ', 'SENO1_ERAM', 'SENO-GB3Z3'), 'ММГ',
+        vie.ae_title IN ('AQSP_GP68', 'CT172868', 'REVOL_GP210', 'REVOL_GP214', 'RVMAX-GP23', 'RVMAX-K2042'), 'КТ',
         vie.ae_title IN ('ARP_TGBF6', 'IMP_KDC2', 'RADREX_MOSF3', 'RENEX1_MOS', 'RENEX5_GP52F1', 'RENEXRC1_GP191F1', 'RENEXRC_DC3', 'RENEXRC_DC3F5', 'RENEXRC_GP109', 'RENEXRC_GP134F1', 'RENEXRC_GP166', 'RENEXRC_GP166F3', 'RENEXRC_GP170', 'RENEXRC_GP170F4', 'RENEXRC_GP180F4', 'RENEXRC_GP195', 'RENEXRC_GP195F3', 'RENEXRC_GP209', 'RENEXRC_GP209F2', 'RENEXRC_GP2F3', 'RENEXRC_GP46F3', 'RENEXRC_GP5', 'RENEXRC_GP52F2', 'RENEXRC_GP62', 'RENEXRC_GP64F1', 'RENEXRC_GP66', 'RENEXRC_GP66F4', 'RENEXRC_GP67F1', 'RENEXRC_GP68', 'RENEXRC_GP68F2', 'RENEXRC_GP69', 'RENEXRC_GP6F3', 'RENEXRC_GP8F2', 'RENEXRC_K2042', 'RENEXRC_KDC4F2', 'RENEXRC_KDC4F5', 'RENEXRC_KDC6', 'RENEXRC_KDC6F3', 'RENEX_DGP148', 'RENEX_GP11', 'RENEX_GP180F2', 'RENEX_GP180F4', 'RENEX_GP23F3', 'RENEX_GP45F5', 'RENEX_GP62F1', 'RENEX_K2042', 'RENEX_KDC4F2', 'RENEX_KDC4F4', 'RENRC_GP212F197', 'TERRA1_GP67F3'), 'РГ',
-        vie.ae_title IN ('GAMRF_GP68F1', 'PROSKAN_GP212F6','RENEXRC_GP12F3','RENEXRC_GP45'), 'РГ',
-        vie.ae_title IN ('GELUNAR1_GP180', 'GELUNAR2_GP68', 'GELUNAR_GP212'), 'Денситометрия',
+        vie.ae_title IN ('GAMRF_GP68F1', 'PROSKAN_GP212F6','RENEXRC_GP12F3','RENEXRC_GP45', 'RENEX_K1460', 'RENEX_K225', 'RENEX_K911', 'RENEX1_GB3', 'RENEX1_K2042', 'RENEXRC_GB3', 'RENEXRC_K1460', 'RENEXRC_K225', 'RENEXRC_K911'), 'РГ',
+        vie.ae_title IN ('GELUNAR1_GP180', 'GELUNAR2_GP68', 'GELUNAR_GP212', 'GELUNAR_K2042'), 'Денситометрия',
         -- Если ae_title не в списке, используем значение из базы
         vie.device_type
     ) AS corrected_device_type,
@@ -519,8 +519,6 @@ LEFT JOIN normativy_dney_mesyatsev AS ndm
 WHERE vie.conduct_date IS NOT NULL
   AND vie.conduct_mo_name IS NOT NULL
   AND vie.ae_title IS NOT NULL
-  -- Добавленная фильтрация: исключаем стационары
-  AND NOT ((vie.conduct_mo_name ILIKE '%Кончаловского%') OR (vie.conduct_mo_name ILIKE '%Филатова%') OR (vie.conduct_mo_name ILIKE '%Юдина%') OR (vie.conduct_mo_name ILIKE '%Ерамиша%'))
   -- Фильтр за последние N месяцев (например, 12 месяцев)
   AND vie.conduct_date >= addMonths(today(), -12)
 GROUP BY
@@ -675,9 +673,9 @@ def main():
         dashboard_msg_workload_month = "Новый дашборд по загрузке аппаратов по месяцам обновлен"
         send_dashboard_ntfy_message(dashboard_msg_workload_month)
 
-        # Записываем успех в базу
-        if STATUS_TRACKER_AVAILABLE:
-            record_script_completion(script_name, dashboard_msg_workload_month)
+        # # Записываем успех в базу
+        # if STATUS_TRACKER_AVAILABLE:
+        #     record_script_completion(script_name, dashboard_msg_workload_month)
     else:
         print("❌ Экспорт новых данных workload_komet_month завершен с ошибками")
         send_log_ntfy_message("❌ Экспорт новых данных workload_komet_month завершен с ошибками")
@@ -695,9 +693,9 @@ def main():
         error_msg_workload_month = "Не удалось обновить новый дашборд по загрузке аппаратов по месяцам"
         send_dashboard_ntfy_message(f"❌ {error_msg_workload_month}")
 
-        # Записываем ошибку в базу
-        if STATUS_TRACKER_AVAILABLE:
-            record_script_error(script_name, error_msg_workload_month)
+        # # Записываем ошибку в базу
+        # if STATUS_TRACKER_AVAILABLE:
+        #     record_script_error(script_name, error_msg_workload_month)
 
     return success_workload_month
 
