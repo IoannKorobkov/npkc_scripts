@@ -231,7 +231,7 @@ def export_validation_eris_report():
             ON vie.study_uid = eris_rep.studyIUID
             WHERE vie.ae_title IS NOT NULL 
                 AND vie.patient_age > '17' 
-                AND vie.conduct_mo_id != '10449178' 
+                # AND vie.conduct_mo_id != '10449178' 
                 AND toDate(vie.conduct_date) >= now() - INTERVAL {DAYS_TO_SYNC} DAY
         """
 
