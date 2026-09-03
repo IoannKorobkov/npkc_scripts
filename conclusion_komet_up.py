@@ -249,7 +249,7 @@ WHERE
     t2.accession_number != ''
     and assessment_result_type_code = 1
     AND t2.assignment_describe_mu_id = 100001912827
-    AND conduct_datetime is not NUll
+    AND t2.conduct_date is not NUll
         """
         
         # Добавляем фильтр по дате
@@ -544,7 +544,7 @@ FROM (
 LEFT JOIN data_views.v_instrumental_examinations ie ON t2.accession_number = ie.accession_number
 LEFT JOIN data_views.v_route_eris_trauma trauma_res ON t2.accession_number = trauma_res.accession_number AND trauma_res.accession_number != ''
 LEFT JOIN data_views.v_task_pin pin_res ON t2.accession_number = pin_res.accession_number AND pin_res.accession_number != ''
-WHERE t2.accession_number != '' AND assessment_result_type_code = 1 AND t2.assignment_describe_mu_id = 100001912827
+WHERE t2.accession_number != '' AND assessment_result_type_code = 1 AND t2.assignment_describe_mu_id = 100001912827 AND t2.conduct_date IS NOT NULL
         """
         date_clause = f"  AND toDate((t2.assignment_result_doc_created_date + INTERVAL 3 HOUR)) >= '{n_days_ago.isoformat()}' AND toDate(t2.assignment_result_doc_created_date + INTERVAL 3 HOUR) <= '{today.isoformat()}'"
         final_query = base_query + date_clause
