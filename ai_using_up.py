@@ -1,4 +1,6 @@
 """
+Для обновления нужен csv файл с тарифами ai_model_tariffs!
+
 ai_using_up.py  →  dwh_test_db.ai_using_studies  (Target CH)
 
 Анализ использования ИИ врачами при описании КТ, МРТ, РГ, ММГ в НПКЦ.
