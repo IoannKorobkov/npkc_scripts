@@ -1,5 +1,6 @@
 """
 all_dashboards_up.py
+Обновлен 16.09.2026
 Единый скрипт для обновления всех дашбордов.
 VPN подключается ОДИН РАЗ, все запросы выполняются последовательно, затем VPN отключается.
 
@@ -7,7 +8,7 @@ VPN подключается ОДИН РАЗ, все запросы выполн
   1.  стади_up              → instrumental_examinations          (Target CH)
   2.  расхождение_ии_up     → ai_norma_comparing                 (Target CH)
   3.  рабочие_списки_up     → v_instrumental_task_lists          (Target CH)
-  4.  instrumental_3w_up    → instrumental_examinations_3w       (Target CH)
+  4.  instrumental_3w_up    → instrumental_examinations_3w       (Target CH)                      - СЕЙЧАС НА ВИРТУАЛКЕ
   5.  ии1_up                → validation_ai_results              (PostgreSQL)
   6.  ии2_up                → validation_eris_report             (PostgreSQL)
   7.  conclusion_komet_up   → cometa_conclusions_summary         (Target CH)
@@ -23,10 +24,11 @@ VPN подключается ОДИН РАЗ, все запросы выполн
   17. кис_загрузка_врачей   → kis_workload_doc                   (Target CH)  [Дополнительно]
   18. oko_saurona_up        → overdue_studies_monitoring         (Target CH)
   19. svo_eris_llo_up       → svo_eris_llo_examinations          (Target CH)
-  20. ai_using_up           → ai_using_studies                   (Target CH)  [Дополнительно]
+  20. ai_using_up           → ai_using_studies                   (Target CH)  [Дополнительно]     - Отключен!
   21. ai_model_usage_up     → ai_model_usage_daily               (Target CH)  [Дополнительно]
   22. guide_dismissed_up    → guide_doctors_dismissal_v2         (Target CH, без VPN)
   23. concl_describe_time_daily_up_ver2 → describe_time_daily    (Target CH)
+  24. concl_uet_detail_up   → concl_uet_detail                   (Target CH)
 
 Исключён (старый скрипт):
   не_описанные_up.py          → instrumental_examinations_queue_v3  (заменён на instrumental_3w_up)
@@ -66,9 +68,9 @@ _DASHBOARD_URLS = {
     'рабочие_списки / v_instrumental_task_lists':
         ('Медицина_ДКЦЛД — Рабочие списки врачей',
          'https://datalens.ru/7n8p0x71xmuur-medicina-dkcld-rabochie-spiski-vrachey'),
-    'инстр_3w / instrumental_examinations_3w':
-        ('Медицина_ДКЦЛД — Не описанные исследования',
-         'https://datalens.ru/4p1hmidf0tc8o-medicina-dkcld-ne-opisannye-issledovaniya'),
+    # 'инстр_3w / instrumental_examinations_3w':
+    #     ('Медицина_ДКЦЛД — Не описанные исследования',
+    #      'https://datalens.ru/4p1hmidf0tc8o-medicina-dkcld-ne-opisannye-issledovaniya'),
     'ии1 / validation_ai_results':
         ('Медицина_ИИ — Поток исследований',
          'https://datalens.ru/s8tathzr83tgc-medicina-ii-potok-issledovaniy'),
@@ -116,6 +118,8 @@ _DASHBOARD_URLS = {
     'describe_time_daily / describe_time_daily':
         ('Медицина — Среднее время описания врачом',
         'https://datalens.ru/n8dbrz8i1aok6-medicina-srednee-vremya-opisaniya-vrachom'),
+    'concl_uet_detail / concl_uet_detail':
+        ('—', ''),
 }
 
 
@@ -254,6 +258,8 @@ DAYS_DESCRIBE_TIME_DAILY = 20  # concl_describe_time_daily_up_ver2: describe_tim
 #   расхождение_ии_up   (ai_norma_comparing, PG):  фиксированная дата '2025-10-01' в исходном скрипте
 #   caop_export_up      (count_caop, PG):           фиксированная дата '2024-01-01' в исходном скрипте
 #   instrumental_3w_up  (instrumental_examinations_3w): полный срез за 7 дней, DAYS_TO_SYNC не используется
+#   concl_uet_detail_up (concl_uet_detail, Target CH): фиксированная дата DATA_START_DATE = 2026-08-01, # DAYS_TO_SYNC не используется
+
 
 # ===========================================================================
 # Настройки VPN (один раз для всех)
@@ -457,7 +463,7 @@ _modules_map = {
     'стади':       'стади_up.py',
     'расхождение': 'расхождение_ии_up.py',
     'рабочие':     'рабочие_списки_up.py',
-    'инстр_3w':    'instrumental_3w_up.py',
+    # 'инстр_3w':    'instrumental_3w_up.py',
     'ии1':         'ии1_up.py',
     'ии2':         'ии2_up.py',
     'komet':       'conclusion_komet_up.py',
@@ -477,6 +483,7 @@ _modules_map = {
     'ai_model_usage': 'ai_model_usage_up.py',
     'guide_dismissed':'guide_dismissed_up.py',
     'describe_time_daily': 'concl_describe_time_daily_up_ver2.py',
+    'concl_uet_detail': 'concl_uet_detail_up.py',
 }
 
 _mods = {}
@@ -597,9 +604,9 @@ def main():
         extract_results['рабочие_списки / v_instrumental_task_lists'] = \
             _run_task("рабочие [extract]", lambda: m['рабочие'].extract_and_buffer_data())
 
-    if m['инстр_3w']:
-        extract_results['инстр_3w / instrumental_examinations_3w'] = \
-            _run_task("инстр_3w [extract]", lambda: m['инстр_3w'].extract_phase())
+    # if m['инстр_3w']:
+    #     extract_results['инстр_3w / instrumental_examinations_3w'] = \
+    #         _run_task("инстр_3w [extract]", lambda: m['инстр_3w'].extract_phase())
 
     if m['ии1']:
         extract_results['ии1 / validation_ai_results'] = \
@@ -672,6 +679,10 @@ def main():
     if m['describe_time_daily']:
         extract_results['describe_time_daily / describe_time_daily'] = \
             _run_task("describe_time_daily [extract]", lambda: m['describe_time_daily'].extract_phase())
+        
+    if m['concl_uet_detail']:
+        extract_results['concl_uet_detail / concl_uet_detail'] = \
+            _run_task("concl_uet_detail [extract]", lambda: m['concl_uet_detail'].extract_phase())
  
    
 
@@ -707,9 +718,9 @@ def main():
         load_results['рабочие_списки / v_instrumental_task_lists'] = \
             _run_task("рабочие [load]", lambda: m['рабочие'].load_buffer_to_ch())
 
-    if m['инстр_3w'] and extract_results.get('инстр_3w / instrumental_examinations_3w'):
-        load_results['инстр_3w / instrumental_examinations_3w'] = \
-            _run_task("инстр_3w [load]", lambda: m['инстр_3w'].load_phase())
+    # if m['инстр_3w'] and extract_results.get('инстр_3w / instrumental_examinations_3w'):
+    #     load_results['инстр_3w / instrumental_examinations_3w'] = \
+    #         _run_task("инстр_3w [load]", lambda: m['инстр_3w'].load_phase())
 
     if m['ии1'] and extract_results.get('ии1 / validation_ai_results'):
         load_results['ии1 / validation_ai_results'] = \
@@ -792,6 +803,10 @@ def main():
         ok = _run_task("guide_dismissed", lambda: _call_guide_dismissed(m['guide_dismissed']))
         extract_results['guide_dismissed / guide_doctors_dismissal_v2'] = True
         load_results['guide_dismissed / guide_doctors_dismissal_v2'] = ok
+    
+    if m['concl_uet_detail'] and extract_results.get('concl_uet_detail / concl_uet_detail'):
+        load_results['concl_uet_detail / concl_uet_detail'] = \
+            _run_task("concl_uet_detail [load]", lambda: m['concl_uet_detail'].load_phase())
 
     # -----------------------------------------------------------------------
     # Итог
