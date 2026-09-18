@@ -1,6 +1,5 @@
 """
-Для обновления нужен csv файл с тарифами ai_model_tariffs!
-
+Обновлен 18.09.2026
 ai_using_up.py  →  dwh_test_db.ai_using_studies  (Target CH)
 
 Анализ использования ИИ врачами при описании КТ, МРТ, РГ, ММГ в НПКЦ.
@@ -26,18 +25,18 @@ import pandas as pd
 import clickhouse_connect
 from datetime import date, timedelta
 
-sys.path.insert(0, r'C:\Users\risen\Desktop\MySecondBrain\project\scripts')
+# sys.path.insert(0, r'C:\Users\risen\Desktop\MySecondBrain\project\scripts')
+sys.path.insert(0, r'L:\MySecondBrain0806\project\scripts')
 import personal_config as cfg
 from ntfy_notifier import send_ntfy_alert
 
 # Задаётся из all_dashboards_up.py
-DAYS_TO_SYNC = 30
+DAYS_TO_SYNC = 10
 
 # Тарифы по модели ИИ (modelId -> цена за исследование), ведутся в отдельном
 # CSV, а не в коде, т.к. периодически обновляются (см. ai_model_tariffs.csv).
 # TARIFFS_PATH = r'C:\Users\risen\Desktop\MySecondBrain\project\scripts\ai_model_tariffs.csv'
 TARIFFS_PATH = r'L:\MySecondBrain0806\project\scripts\ai_model_tariffs.csv'
-
 
 
 def _load_tariffs() -> pd.DataFrame:
@@ -845,63 +844,123 @@ def _prepare_by_study(upload_by_model: pd.DataFrame) -> pd.DataFrame:
     return out[_STUDY_COL_ORDER]
 
 
-def _dedup_mutation_by_model(tc):
+# Запас поверх окна синхронизации (DAYS_TO_SYNC) для дедуп-мутации: дубль
+# может возникнуть только у study_uid, попавшего в ТЕКУЩЕЕ скользящее окно
+# (только эти строки переливаются заново), плюс запас на случай, если
+# describe_start у исследования сдвинулся между прогонами и старая версия
+# строки лежит чуть раньше окна. Не вся история — иначе ALTER DELETE каждый
+# раз сканирует и переписывает всю (растущую) таблицу целиком, что и привело
+# к падению 2026-09-18 (тяжёлая синхронная мутация → ConnectionRefused на
+# всём таргет-кластере для всех последующих задач мультискрипта).
+_DEDUP_SAFETY_MARGIN_DAYS = 30
+
+
+def _dedup_lookback_bound(date_from: str | None = None) -> str:
+    if date_from:
+        base = date.fromisoformat(date_from)
+    else:
+        base = date.today() - timedelta(days=DAYS_TO_SYNC)
+    return str(base - timedelta(days=_DEDUP_SAFETY_MARGIN_DAYS))
+
+
+def _wait_for_mutation(tc, table: str, timeout: int = 900, interval: int = 5) -> None:
+    """Опрашивает system.mutations короткими запросами вместо того, чтобы держать
+    HTTP-соединение открытым на всё время тяжёлой синхронной мутации (см.
+    _DEDUP_SAFETY_MARGIN_DAYS) — это и было первопричиной падения 2026-09-18."""
+    db, tbl = table.split('.', 1)
+    deadline = time.time() + timeout
+    seen = False
+    while time.time() < deadline:
+        df = tc.query_df(f'''
+            SELECT is_done, latest_fail_reason
+            FROM system.mutations
+            WHERE database = '{db}' AND table = '{tbl}'
+            ORDER BY create_time DESC
+            LIMIT 1
+        ''')
+        if len(df) == 0:
+            if seen:
+                return
+            time.sleep(interval)
+            continue
+        seen = True
+        fail_reason = df.iloc[0]['latest_fail_reason']
+        if fail_reason:
+            raise RuntimeError(f'мутация на {table} завершилась с ошибкой: {fail_reason}')
+        if bool(df.iloc[0]['is_done']):
+            return
+        time.sleep(interval)
+    raise TimeoutError(f'мутация на {table} не завершилась за {timeout} сек')
+
+
+def _dedup_mutation_by_model(tc, lookback_from: str):
     """ALTER TABLE ... DELETE на ai_using_studies_by_model — оставляет по
     каждой паре (study_uid, modelId) только самую свежую версию (по
     loaded_at). Ключ включает modelId, т.к. 1 строка = исследование × модель
     (см. комментарий у ai_result в _analyse_one). ifNull нужен, чтобы NULL
-    modelId (has_ai=0) не ломал сравнение тройки в NOT IN. Кидает исключение
-    при ошибке."""
+    modelId (has_ai=0) не ломал сравнение тройки в NOT IN.
+    describe_start >= lookback_from ограничивает и скан, и переписывание
+    только текущим скользящим окном синхронизации (см. _DEDUP_SAFETY_MARGIN_DAYS) —
+    более старая история дублей не создаёт и не трогается. mutations_sync='0':
+    мутация регистрируется и выполняется в фоне на сервере, не блокируя
+    HTTP-соединение клиента; статус ждём отдельно через _wait_for_mutation.
+    Кидает исключение при ошибке."""
     tc.command(
         f'''
         ALTER TABLE {TABLE_BY_MODEL}
-        DELETE WHERE (study_uid, ifNull(modelId, -1), loaded_at) NOT IN (
+        DELETE WHERE describe_start >= '{lookback_from}'
+          AND (study_uid, ifNull(modelId, -1), loaded_at) NOT IN (
             SELECT study_uid, ifNull(modelId, -1), max(loaded_at)
             FROM {TABLE_BY_MODEL}
+            WHERE describe_start >= '{lookback_from}'
             GROUP BY study_uid, ifNull(modelId, -1)
         )
         ''',
-        settings={'mutations_sync': '1'},
+        settings={'mutations_sync': '0'},
     )
+    _wait_for_mutation(tc, TABLE_BY_MODEL)
 
 
-def _dedup_mutation_by_study(tc):
-    """ALTER TABLE ... DELETE на ai_using_studies (старые рельсы) — оставляет
-    по каждому study_uid только самую свежую версию (по loaded_at). Кидает
-    исключение при ошибке."""
+def _dedup_mutation_by_study(tc, lookback_from: str):
+    """Аналогично _dedup_mutation_by_model, но на ai_using_studies (старые
+    рельсы) — ключ только study_uid. Кидает исключение при ошибке."""
     tc.command(
         f'''
         ALTER TABLE {TABLE_BY_STUDY}
-        DELETE WHERE (study_uid, loaded_at) NOT IN (
+        DELETE WHERE describe_start >= '{lookback_from}'
+          AND (study_uid, loaded_at) NOT IN (
             SELECT study_uid, max(loaded_at)
             FROM {TABLE_BY_STUDY}
+            WHERE describe_start >= '{lookback_from}'
             GROUP BY study_uid
         )
         ''',
-        settings={'mutations_sync': '1'},
+        settings={'mutations_sync': '0'},
     )
+    _wait_for_mutation(tc, TABLE_BY_STUDY)
 
 
-def _dedup_check_one(tc, table: str, uniq_expr: str, mutation_fn, verbose: bool) -> bool:
+def _dedup_check_one(tc, table: str, uniq_expr: str, mutation_fn, lookback_from: str, verbose: bool) -> bool:
     try:
-        total = int(tc.query_df(f"SELECT count() AS cnt FROM {table}").iloc[0, 0])
-        uniq = int(tc.query_df(f"SELECT count(DISTINCT {uniq_expr}) AS cnt FROM {table}").iloc[0, 0])
+        where = f"WHERE describe_start >= '{lookback_from}'"
+        total = int(tc.query_df(f"SELECT count() AS cnt FROM {table} {where}").iloc[0, 0])
+        uniq = int(tc.query_df(f"SELECT count(DISTINCT {uniq_expr}) AS cnt FROM {table} {where}").iloc[0, 0])
         dup = total - uniq
 
         if dup <= 0:
             if verbose:
-                print(f'[ai_using] dedup_check[{table}]: дублей нет ({total} строк)')
+                print(f'[ai_using] dedup_check[{table}]: дублей нет ({total} строк в окне)')
             return True
 
         if verbose:
             print(f'[ai_using] dedup_check[{table}]: найдено {dup} дублей '
-                  f'({total} строк, {uniq} уникальных) — устраняю...')
-        mutation_fn(tc)
+                  f'({total} строк в окне, {uniq} уникальных) — устраняю...')
+        mutation_fn(tc, lookback_from)
 
-        total_after = int(tc.query_df(f"SELECT count() AS cnt FROM {table}").iloc[0, 0])
+        total_after = int(tc.query_df(f"SELECT count() AS cnt FROM {table} {where}").iloc[0, 0])
         if verbose:
             print(f'[ai_using] dedup_check[{table}]: удалено {total - total_after} строк, '
-                  f'осталось {total_after}')
+                  f'осталось {total_after} в окне')
         return True
     except Exception as e:
         print(f'[ai_using] ❌ dedup_check[{table}]: {e}')
@@ -913,15 +972,18 @@ def _dedup_check_one(tc, table: str, uniq_expr: str, mutation_fn, verbose: bool)
         return False
 
 
-def dedup_check(verbose: bool = True) -> bool:
+def dedup_check(verbose: bool = True, date_from: str | None = None) -> bool:
     """Безопасная самостоятельная проверка/устранение дублей в обеих целевых
-    таблицах. Не зависит от _buffer — можно вызывать отдельно (в конце main()
-    или из all_dashboards_up.py) как страховку на случай, если дедуп внутри
-    load_phase() не отработал."""
+    таблицах, в пределах скользящего окна синхронизации (см.
+    _DEDUP_SAFETY_MARGIN_DAYS). Не зависит от _buffer — можно вызывать отдельно
+    (в конце main() или из all_dashboards_up.py) как страховку на случай, если
+    дедуп внутри load_phase() не отработал."""
     tc = _target_client()
-    ok_study = _dedup_check_one(tc, TABLE_BY_STUDY, 'study_uid', _dedup_mutation_by_study, verbose)
+    lookback_from = _dedup_lookback_bound(date_from)
+    ok_study = _dedup_check_one(tc, TABLE_BY_STUDY, 'study_uid', _dedup_mutation_by_study,
+                                 lookback_from, verbose)
     ok_model = _dedup_check_one(tc, TABLE_BY_MODEL, '(study_uid, ifNull(modelId, -1))',
-                                 _dedup_mutation_by_model, verbose)
+                                 _dedup_mutation_by_model, lookback_from, verbose)
     return ok_study and ok_model
 
 
@@ -964,9 +1026,10 @@ def load_phase() -> bool:
     # Отдельный try — если дедуп упадёт, вставленные данные уже не теряем и не
     # гоняем повторно, но явно сообщаем об ошибке.
     print('[ai_using] дедупликация обеих таблиц (ALTER TABLE ... DELETE)...')
+    lookback_from = _dedup_lookback_bound(date_from)
     try:
-        _dedup_mutation_by_study(tc)
-        _dedup_mutation_by_model(tc)
+        _dedup_mutation_by_study(tc, lookback_from)
+        _dedup_mutation_by_model(tc, lookback_from)
     except Exception as e:
         print(f'[ai_using] ❌ дедупликация не выполнена: {e}')
         print(traceback.format_exc())
