@@ -1,5 +1,5 @@
 """
-Обновлен 18.09.2026
+Обновлен 22.09.2026
 ai_using_up.py  →  dwh_test_db.ai_using_studies  (Target CH)
 
 Анализ использования ИИ врачами при описании КТ, МРТ, РГ, ММГ в НПКЦ.
@@ -25,8 +25,7 @@ import pandas as pd
 import clickhouse_connect
 from datetime import date, timedelta
 
-# sys.path.insert(0, r'C:\Users\risen\Desktop\MySecondBrain\project\scripts')
-sys.path.insert(0, r'L:\MySecondBrain0806\project\scripts')
+sys.path.insert(0, r'C:\Users\risen\Desktop\MySecondBrain\project\scripts')
 import personal_config as cfg
 from ntfy_notifier import send_ntfy_alert
 
@@ -35,8 +34,7 @@ DAYS_TO_SYNC = 10
 
 # Тарифы по модели ИИ (modelId -> цена за исследование), ведутся в отдельном
 # CSV, а не в коде, т.к. периодически обновляются (см. ai_model_tariffs.csv).
-# TARIFFS_PATH = r'C:\Users\risen\Desktop\MySecondBrain\project\scripts\ai_model_tariffs.csv'
-TARIFFS_PATH = r'L:\MySecondBrain0806\project\scripts\ai_model_tariffs.csv'
+TARIFFS_PATH = r'C:\Users\risen\Desktop\MySecondBrain\project\scripts\ai_model_tariffs.csv'
 
 
 def _load_tariffs() -> pd.DataFrame:
@@ -216,6 +214,14 @@ def _analyse_one(client, date_from: str, date_to: str, modality: str) -> pd.Data
     conf = MODALITY_CONFIG[modality]
     device_type   = conf['device_type']
     ai_modalities = ", ".join(f"'{m}'" for m in conf['ai_log_modalities'])
+
+    # Пассивная ИИ-активность (AUTO_LOAD/AUTO_GRID), которая тем не менее
+    # приравнивается к активной — правило от коллеги, зафиксировано 2026-09-22:
+    #   ММГ — доп. серия открывается сразу на весь экран, не увидеть её нельзя,
+    #         поэтому действует всегда, вне зависимости от нормы/патологии;
+    #   РГ/КТ/МРТ — при norma=1 сервис не нашёл патологии, листать вручную
+    #         незачем, чтобы это понять — действует только при norma=1.
+    passive_elevated_sql = '1' if modality == 'ММГ' else "r.norma_value = '1'"
 
     sql = f"""
         WITH
@@ -486,6 +492,7 @@ def _analyse_one(client, date_from: str, date_to: str, modality: str) -> pd.Data
                   OR (a.active_in_window + a.view_in_window
                       + a.enlarge_in_window + a.passive_in_window) = 0 THEN 'no_ai'
                 WHEN (a.active_in_window + a.view_in_window + a.enlarge_in_window) > 0   THEN 'active'
+                WHEN a.passive_in_window > 0 AND ({passive_elevated_sql})                THEN 'active'
                 ELSE 'passive'
             END                                                                           AS ai_interaction,
             nullIf(a.first_ai_open, toDateTime('1970-01-01 00:00:00'))                   AS first_ai_open,
@@ -624,6 +631,22 @@ def _naive(ts):
     return ts.tz_localize(None) if getattr(ts, 'tzinfo', None) is not None else ts
 
 
+def _passive_elevated_mask(modality: pd.Series, norma_value: pd.Series) -> pd.Series:
+    """Python-эквивалент passive_elevated_sql из _analyse_one — нужен отдельно,
+    т.к. ai_interaction пересчитывается заново после схлопывания multi-series
+    (_merge_multi_series) и multi-model (_prepare_by_study) строк, где считать
+    заново SQL-выражение уже нельзя (данные уже в DataFrame)."""
+    def _is_norma(x):
+        if pd.isna(x) or x == '':
+            return False
+        try:
+            return int(float(x)) == 1
+        except (TypeError, ValueError):
+            return False
+    norma_is_norm = norma_value.apply(_is_norma)
+    return (modality == 'ММГ') | norma_is_norm
+
+
 def _combine_methods_used(values):
     methods = set()
     for v in values:
@@ -678,8 +701,10 @@ def _merge_multi_series(df: pd.DataFrame) -> pd.DataFrame:
     in_window_sum = merged[['active_in_window', 'view_in_window',
                              'enlarge_in_window', 'passive_in_window']].sum(axis=1, skipna=True)
     active_sum = merged[['active_in_window', 'view_in_window', 'enlarge_in_window']].sum(axis=1, skipna=True)
+    passive_elevated = _passive_elevated_mask(merged['modality'], merged['norma_value'])
+    ai_active_sum = active_sum + np.where(passive_elevated, merged['passive_in_window'].fillna(0), 0)
     merged['ai_interaction'] = np.select(
-        [in_window_sum == 0, active_sum > 0], ['no_ai', 'active'], default='passive',
+        [in_window_sum == 0, ai_active_sum > 0], ['no_ai', 'active'], default='passive',
     )
 
     outside_active_sum = merged[['outside_active_cnt', 'outside_view_cnt']].sum(axis=1, skipna=True)
@@ -826,8 +851,10 @@ def _prepare_by_study(upload_by_model: pd.DataFrame) -> pd.DataFrame:
     in_window_sum = out[['active_in_window', 'view_in_window',
                           'enlarge_in_window', 'passive_in_window']].sum(axis=1, skipna=True)
     active_sum = out[['active_in_window', 'view_in_window', 'enlarge_in_window']].sum(axis=1, skipna=True)
+    passive_elevated = _passive_elevated_mask(out['modality'], out['norma_value'])
+    ai_active_sum = active_sum + np.where(passive_elevated, out['passive_in_window'].fillna(0), 0)
     out['ai_interaction'] = np.select(
-        [in_window_sum == 0, active_sum > 0], ['no_ai', 'active'], default='passive',
+        [in_window_sum == 0, ai_active_sum > 0], ['no_ai', 'active'], default='passive',
     )
 
     outside_active_sum = out[['outside_active_cnt', 'outside_view_cnt']].sum(axis=1, skipna=True)
@@ -987,6 +1014,68 @@ def dedup_check(verbose: bool = True, date_from: str | None = None) -> bool:
     return ok_study and ok_model
 
 
+# ===========================================================================
+# Разовый пересчёт ai_interaction под новую формулу passive_elevated (2026-09-22)
+# ===========================================================================
+# Формула читает только уже сохранённые в таблице поля (modality, norma_value,
+# *_in_window) — повторное извлечение из source (VPN) не требуется, обычный
+# ALTER TABLE ... UPDATE. Чанкуем по датам (а не один ALTER на всю таблицу),
+# чтобы не повторить падение 2026-09-18 (тяжёлая синхронная мутация →
+# ConnectionRefused на всём таргет-кластере, см. _DEDUP_SAFETY_MARGIN_DAYS).
+_RECLASSIFY_CHUNK_DAYS = 14
+
+_AI_INTERACTION_EXPR = """
+    multiIf(
+        (ifNull(active_in_window, 0) + ifNull(view_in_window, 0)
+         + ifNull(enlarge_in_window, 0) + ifNull(passive_in_window, 0)) = 0, 'no_ai',
+        (ifNull(active_in_window, 0) + ifNull(view_in_window, 0)
+         + ifNull(enlarge_in_window, 0)) > 0, 'active',
+        ifNull(passive_in_window, 0) > 0 AND (modality = 'ММГ' OR norma_value = '1'), 'active',
+        'passive'
+    )
+"""
+
+
+def reclassify_ai_interaction_history(chunk_days: int = _RECLASSIFY_CHUNK_DAYS) -> bool:
+    """Пересчитывает ai_interaction во ВСЕЙ уже загруженной истории обеих таблиц
+    под новую формулу passive_elevated (см. _analyse_one). Идёт чанками по
+    describe_start от MIN_DESCRIBE_START до сегодня, каждый чанк — отдельная
+    асинхронная мутация с ожиданием (тот же паттерн, что и в дедупе)."""
+    tc = _target_client()
+    ok = True
+    d_from_bound = date.fromisoformat(MIN_DESCRIBE_START)
+    d_to_bound = date.today() + timedelta(days=1)
+
+    for table in (TABLE_BY_STUDY, TABLE_BY_MODEL):
+        chunk_start = d_from_bound
+        while chunk_start < d_to_bound:
+            chunk_end = min(chunk_start + timedelta(days=chunk_days), d_to_bound)
+            print(f'[ai_using] reclassify[{table}]: {chunk_start} — {chunk_end}...')
+            try:
+                tc.command(
+                    f"""
+                    ALTER TABLE {table}
+                    UPDATE ai_interaction = {_AI_INTERACTION_EXPR}
+                    WHERE describe_start >= '{chunk_start}' AND describe_start < '{chunk_end}'
+                    """,
+                    settings={'mutations_sync': '0'},
+                )
+                _wait_for_mutation(tc, table)
+            except Exception as e:
+                print(f'[ai_using] ❌ reclassify[{table}] чанк {chunk_start}-{chunk_end}: {e}')
+                print(traceback.format_exc())
+                send_ntfy_alert(
+                    f'ai_using reclassify[{table}] {chunk_start}-{chunk_end}: ошибка — {e}',
+                    title='AI Using Reclassify Failed', priority='urgent', tags='warning',
+                )
+                ok = False
+            chunk_start = chunk_end
+
+    if ok:
+        print('[ai_using] reclassify: история пересчитана в обеих таблицах.')
+    return ok
+
+
 def load_phase() -> bool:
     global _buffer
     if (_buffer is None or len(_buffer) == 0) and os.path.exists(_BUFFER_PKL):
@@ -1127,8 +1216,17 @@ if __name__ == '__main__':
     parser.add_argument('--extract-only', action='store_true',
                         help='Только VPN + извлечение + отключение VPN, без загрузки в target CH. '
                              'Буфер сохраняется на диск — загрузка отдельно через --load-only')
+    parser.add_argument('--reclassify-history', action='store_true',
+                        help='Разовый пересчёт ai_interaction во всей уже загруженной истории '
+                             'обеих таблиц под новую формулу passive_elevated. Без VPN, без '
+                             'повторного извлечения — только ALTER TABLE ... UPDATE чанками по датам')
     args = parser.parse_args()
     DAYS_TO_SYNC = args.days
+
+    if args.reclassify_history:
+        print('[ai_using] --reclassify-history: пересчитываю ai_interaction по всей истории...')
+        ok = reclassify_ai_interaction_history()
+        sys.exit(0 if ok else 1)
 
     if args.load_only:
         if not os.path.exists(_BUFFER_PKL):
