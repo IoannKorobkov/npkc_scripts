@@ -1,6 +1,6 @@
 """
+Обновлен 22.09.2026
 all_dashboards_up.py
-Обновлен 16.09.2026
 Единый скрипт для обновления всех дашбордов.
 VPN подключается ОДИН РАЗ, все запросы выполняются последовательно, затем VPN отключается.
 
@@ -24,11 +24,12 @@ VPN подключается ОДИН РАЗ, все запросы выполн
   17. кис_загрузка_врачей   → kis_workload_doc                   (Target CH)  [Дополнительно]
   18. oko_saurona_up        → overdue_studies_monitoring         (Target CH)
   19. svo_eris_llo_up       → svo_eris_llo_examinations          (Target CH)
-  20. ai_using_up           → ai_using_studies                   (Target CH)  [Дополнительно]     - Отключен!
+  20. ai_using_up           → ai_using_studies                   (Target CH)  [Дополнительно]     
   21. ai_model_usage_up     → ai_model_usage_daily               (Target CH)  [Дополнительно]
   22. guide_dismissed_up    → guide_doctors_dismissal_v2         (Target CH, без VPN)
   23. concl_describe_time_daily_up_ver2 → describe_time_daily    (Target CH)
   24. concl_uet_detail_up   → concl_uet_detail                   (Target CH)
+  25. eris_oms_goal_report_up → eris_oms_goal_report             (Target CH)
 
 Исключён (старый скрипт):
   не_описанные_up.py          → instrumental_examinations_queue_v3  (заменён на instrumental_3w_up)
@@ -119,6 +120,8 @@ _DASHBOARD_URLS = {
         ('Медицина — Среднее время описания врачом',
         'https://datalens.ru/n8dbrz8i1aok6-medicina-srednee-vremya-opisaniya-vrachom'),
     'concl_uet_detail / concl_uet_detail':
+        ('—', ''),
+    'eris_oms_goal / eris_oms_goal_report':
         ('—', ''),
 }
 
@@ -253,6 +256,8 @@ DAYS_АИ_МОДЕЛИ        = 3    # ai_model_usage_up:     ai_model_usage_dai
 
 DAYS_DESCRIBE_TIME_DAILY = 20  # concl_describe_time_daily_up_ver2: describe_time_daily (Target CH)
                                #   удаляет и перегружает данные за последние N дней
+
+DAYS_ERIS_OMS_GOAL = 10        # eris_oms_goal_report_up: Есть второй параеметр в скрипте (Target CH)
 
 # Примечания:
 #   расхождение_ии_up   (ai_norma_comparing, PG):  фиксированная дата '2025-10-01' в исходном скрипте
@@ -484,6 +489,8 @@ _modules_map = {
     'guide_dismissed':'guide_dismissed_up.py',
     'describe_time_daily': 'concl_describe_time_daily_up_ver2.py',
     'concl_uet_detail': 'concl_uet_detail_up.py',
+    'eris_oms_goal': 'eris_oms_goal_report_up.py',
+
 }
 
 _mods = {}
@@ -517,6 +524,7 @@ if _mods['svo_eris_llo']: _mods['svo_eris_llo'].DAYS_TO_SYNC = DAYS_SVO_ERIS_LLO
 if _mods['ai_using']:    _mods['ai_using'].DAYS_TO_SYNC    = DAYS_АИ_ЮЗИНГ
 if _mods['ai_model_usage']: _mods['ai_model_usage'].DAYS_TO_SYNC = DAYS_АИ_МОДЕЛИ
 if _mods['describe_time_daily']: _mods['describe_time_daily'].DAYS_TO_SYNC = DAYS_DESCRIBE_TIME_DAILY
+if _mods['eris_oms_goal']: _mods['eris_oms_goal'].PERIOD_DAYS = DAYS_ERIS_OMS_GOAL
 
 print("📦 Все модули загружены.\n")
 
@@ -683,6 +691,10 @@ def main():
     if m['concl_uet_detail']:
         extract_results['concl_uet_detail / concl_uet_detail'] = \
             _run_task("concl_uet_detail [extract]", lambda: m['concl_uet_detail'].extract_phase())
+
+    if m['eris_oms_goal']:
+        extract_results['eris_oms_goal / eris_oms_goal_report'] = \
+            _run_task("eris_oms_goal [extract]", lambda: m['eris_oms_goal'].extract_phase())
  
    
 
@@ -807,6 +819,10 @@ def main():
     if m['concl_uet_detail'] and extract_results.get('concl_uet_detail / concl_uet_detail'):
         load_results['concl_uet_detail / concl_uet_detail'] = \
             _run_task("concl_uet_detail [load]", lambda: m['concl_uet_detail'].load_phase())
+
+    if m['eris_oms_goal'] and extract_results.get('eris_oms_goal / eris_oms_goal_report'):
+            load_results['eris_oms_goal / eris_oms_goal_report'] = \
+                _run_task("eris_oms_goal [load]", lambda: m['eris_oms_goal'].load_phase())
 
     # -----------------------------------------------------------------------
     # Итог
